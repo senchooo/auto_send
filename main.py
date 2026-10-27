@@ -126,7 +126,7 @@ class PacsExtractor:
         page.get_by_role("cell").first.click()
 
 
-    def _download_pdf(self, page: Page, px: DataPx) -> Path:
+    def _download_pdf(self, page: Page, px: DataPx) -> list[Path]:
         print('downloading pdf report...')
 
         with page.expect_popup() as page1_info:
@@ -136,35 +136,55 @@ class PacsExtractor:
         extra_popup: list[Page] = []
         page_report.on("popup", lambda popup: extra_popup.append(popup))
 
+        download_list: list[Path] = []
+
         try:
             page_report.wait_for_load_state("load")
 
             btn_link_pdf = page_report.get_by_role("link", name=re.compile("Download PDF", re.IGNORECASE))
-            btn_download = page_report.get_by_role("button", name=re.compile("Download", re.IGNORECASE))
-            target_button = btn_link_pdf.or_(btn_download).first
+            btn_download = page_report.locator("div.panel-body").get_by_role("button", name=re.compile("Download", re.IGNORECASE))
 
-            pwexpect(target_button).to_be_visible(timeout=15000)
+            pwexpect(btn_link_pdf.or_(btn_download).first).to_be_visible(timeout=15000)
 
-            try:
-                with page_report.expect_download(timeout=2000) as download_info:
-                    target_button.click()
-            except pwtimeout:
-                with page_report.expect_download(timeout=15000) as download_info:
-                    target_button.click()
+            if btn_link_pdf.first.is_visible():
+                all_btn = [btn_link_pdf]
+            else:
+                all_btn = btn_download.all()
 
+            total_btn = len(all_btn)
+            print(f'detected {total_btn} report files to download')
 
-            downloadpw = download_info.value
-
-            base_name = Path(downloadpw.suggested_filename).stem
             clean_name = self._clean_text(px.name)
             exam_name = self._clean_text(px.exam)
-            filename = f"{base_name} - {clean_name}-{exam_name}.pdf"
 
-            download_path = Path(self.folder_download) / filename
-            downloadpw.save_as(download_path)
+            for idx, button in enumerate(all_btn, start=1):
+                try:
+                    with page_report.expect_download(timeout=2000) as download_info:
+                        button.click()
+                except pwtimeout:
+                    with page_report.expect_download(timeout=15000) as download_info:
+                        button.click()
 
-            print(f'pdf report saved to {download_path}')
-            return download_path
+                downloadpw = download_info.value
+                base_name = Path(downloadpw.suggested_filename).stem
+                filename = f"{base_name} - {clean_name}-{exam_name}.pdf"
+                download_path = self.folder_download/filename
+
+                if download_path in download_list:
+                    filename = f"{base_name} ({idx}) - {clean_name} - {exam_name}.pdf"
+                    download_path = self.folder_download/filename
+            
+                downloadpw.save_as(download_path)
+                download_list.append(download_path)
+
+                print(f'[{idx}/{total_btn}]pdf report saved to {download_path}')
+
+                for popup in extra_popup:
+                    if not popup.is_closed():
+                        popup.close()
+                extra_popup.clear()
+
+            return download_list
 
         finally:
             for popup in extra_popup:
@@ -208,7 +228,7 @@ class PacsExtractor:
             page_share.close()
 
 
-    def extracting(self, px: DataPx) -> tuple[Path, str]:
+    def extracting(self, px: DataPx) -> tuple[list[Path], str]:
         page = self.context.new_page()
         try:
             if not self._login(page):
@@ -247,7 +267,7 @@ if __name__ == "__main__":
         try:
             file_pdf, url_pacs = bot.extracting(test_px)
             print('uji coba stateless OOP berhasil')
-            print(f"file PDF: {file_pdf}")
+            print(f"total file PDF ({len(file_pdf)}): {file_pdf}")
             print(f"link pacs: {url_pacs}")
 
         except Exception as e:
