@@ -1,7 +1,15 @@
 venv/
+.venv/
 env/
-
 __pycache__/
 *.pyc
-
+*.py[cod]
 .vscode/
+
+credentials.py
+service_account.json
+*.pdf
+hasil_pdf/
+wa_session/
+
+
